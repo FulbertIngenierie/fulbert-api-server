@@ -11,6 +11,9 @@ const bcrypt = require('bcryptjs');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Trust proxy pour Render et autres services cloud
+app.set('trust proxy', 1);
+
 // Configuration CORS
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'https://fulbert-website.surge.sh',
