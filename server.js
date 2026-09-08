@@ -120,26 +120,27 @@ app.get('/health', (req, res) => {
 // Route de connexion
 app.post('/api/admin/login', authLimiter, async (req, res) => {
   const { username, password } = req.body;
-
-  if (!username || !password) {
-    return res.status(400).json({ error: 'Identifiants manquants' });
-  }
-
-  // Vérification des identifiants (en production, utiliser une base de données avec bcrypt)
   const adminUsername = process.env.ADMIN_USERNAME;
   const adminPassword = process.env.ADMIN_PASSWORD;
+
+  console.log('Tentative de connexion:', { username, adminUsername, adminPassword: adminPassword ? 'SET' : 'NOT SET' });
 
   if (username === adminUsername && password === adminPassword) {
     req.session.authenticated = true;
     req.session.username = username;
     req.session.loginTime = new Date().toISOString();
-    
-    res.json({ 
-      success: true, 
+
+    res.json({
+      success: true,
       message: 'Connexion réussie',
       username: username
     });
   } else {
+    console.log('Échec de connexion:', { 
+      username, 
+      expectedUsername: adminUsername, 
+      passwordMatch: password === adminPassword 
+    });
     res.status(401).json({ error: 'Identifiants incorrects' });
   }
 });
