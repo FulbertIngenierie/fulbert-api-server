@@ -59,7 +59,7 @@ app.use(session({
   cookie: {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production', // true en production avec HTTPS
-    sameSite: 'strict',
+    sameSite: 'none', // 'none' pour cross-domain (Surge + Render)
     maxAge: 24 * 60 * 60 * 1000 // 24 heures
   },
   name: 'fulbert_session'
