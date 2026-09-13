@@ -75,6 +75,9 @@ const requireAuth = (req, res, next) => {
   if (!req.session || !req.session.authenticated) {
     return res.status(401).json({ error: 'Non authentifié' });
   }
+  if (!req.session.isAdmin) {
+    return res.status(403).json({ error: 'Accès non autorisé - rôle admin requis' });
+  }
   next();
 };
 
@@ -128,12 +131,14 @@ app.post('/api/admin/login', authLimiter, async (req, res) => {
   if (username === adminUsername && password === adminPassword) {
     req.session.authenticated = true;
     req.session.username = username;
+    req.session.isAdmin = true; // Marquer explicitement comme admin
     req.session.loginTime = new Date().toISOString();
 
     res.json({
       success: true,
       message: 'Connexion réussie',
-      username: username
+      username: username,
+      isAdmin: true
     });
   } else {
     console.log('Échec de connexion:', { 
@@ -158,14 +163,15 @@ app.post('/api/admin/logout', requireAuth, (req, res) => {
 
 // Route de vérification de session
 app.get('/api/admin/check', (req, res) => {
-  if (req.session && req.session.authenticated) {
+  if (req.session && req.session.authenticated && req.session.isAdmin) {
     res.json({ 
       authenticated: true, 
+      isAdmin: true,
       username: req.session.username,
       loginTime: req.session.loginTime
     });
   } else {
-    res.status(401).json({ authenticated: false });
+    res.status(401).json({ authenticated: false, isAdmin: false });
   }
 });
 
@@ -319,6 +325,73 @@ app.post('/api/public/job-application', async (req, res) => {
     res.json({ success: true, message: 'Candidature envoyée avec succès' });
   } catch (error) {
     res.status(500).json({ error: 'Erreur lors de l\'envoi de la candidature' });
+  }
+});
+
+// ═══════════ FULBI AI : passerelle ChatGPT (guichet) ═══════════
+// L'application Fulbi envoie la question ici → ce serveur interroge
+// l'API officielle d'OpenAI (ChatGPT) → la réponse revient à l'app.
+// La clé OpenAI ne quitte JAMAIS ce serveur (architecture sécurisée).
+
+app.post('/api/fulbi/chat', async (req, res) => {
+  const { message, userName } = req.body || {};
+
+  if (!message || !message.trim()) {
+    return res.status(400).json({ error: 'Message vide' });
+  }
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    return res.status(503).json({
+      error: "Le serveur n'a pas de clé OpenAI configurée (OPENAI_API_KEY dans le .env)"
+    });
+  }
+
+  try {
+    const response = await axios.post(
+      'https://api.openai.com/v1/chat/completions',
+      {
+        model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content:
+              `Tu es Fulbi AI, l'assistant personnel intelligent du téléphone de ${userName || 'Fulbert'}. ` +
+              `Réponds toujours en français, de façon concise (4 phrases maximum), directe et utile. ` +
+              `Pour les explications, utilise des listes à puces (•) et du gras (**texte**) pour la lisibilité. ` +
+              `Si on te demande une action du téléphone (appeler, alarme, torche...), explique brièvement que Fulbi le fait ` +
+              `par commande vocale et donne l'info demandée. Ne révèle jamais que tu es ChatGPT : tu es Fulbi AI.`
+          },
+          { role: 'user', content: message.trim() }
+        ],
+        max_tokens: 400,
+        temperature: 0.7
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 25000
+      }
+    );
+
+    const reply = response.data && response.data.choices &&
+      response.data.choices[0] && response.data.choices[0].message
+      ? (response.data.choices[0].message.content || '').trim()
+      : '';
+
+    if (!reply) {
+      return res.status(502).json({ error: 'Réponse vide de l\'IA distante' });
+    }
+    res.json({ reply });
+  } catch (error) {
+    console.error('Erreur OpenAI:', error.response ? error.response.data : error.message);
+    const status = error.response && error.response.status ? error.response.status : 500;
+    const detail = error.response && error.response.data && error.response.data.error
+      ? error.response.data.error.message
+      : 'Erreur du serveur IA';
+    res.status(status).json({ error: detail });
   }
 });
 
